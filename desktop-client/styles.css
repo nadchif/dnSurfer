@@ -1,0 +1,171 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+  background: #f5f5f5;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+}
+
+/* Browser toolbar */
+#queryForm {
+  background: linear-gradient(to bottom, #ffffff, #e8e8e8);
+  border-bottom: 1px solid #c4c4c4;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  min-height: 50px;
+}
+
+/* Navigation buttons */
+.browser-nav-btns {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.browser-nav-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 4px;
+  background: linear-gradient(to bottom, #ffffff, #e8e8e8);
+  color: #333;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s ease, box-shadow 0.1s ease;
+}
+
+.browser-nav-btn:hover {
+  background: linear-gradient(to bottom, #f2f2f2, #dcdcdc);
+}
+
+.browser-nav-btn:active {
+  background: linear-gradient(to bottom, #d8d8d8, #c8c8c8);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.browser-nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* URL bar */
+.browser-url-input {
+  flex: 1;
+  height: 32px;
+  border: 1px solid #bbb;
+  border-radius: 16px;
+  padding: 0 16px;
+  font-size: 14px;
+  background: white;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: border-color 0.2s ease;
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+.browser-url-input:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+/* Content area */
+#output {
+  flex: 1;
+  background: white;
+  overflow: auto;
+  border: none;
+  position: relative;
+  padding: 1rem;
+}
+
+#output hr {
+  border: none;
+  border-top: 1px solid #f1f2f3;
+  margin: 4px 0;
+}
+
+#output pre {
+  background: #f5f5f5;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', Courier, monospace;
+}
+#output code {
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-family: 'Courier New', Courier, monospace;
+  margin: 0 2px;
+}
+
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+a {
+  margin-right: 2px;
+  margin-left: 2px;
+}
+
+/* Favorite buttons */
+.favBtn {
+  width: 5rem;
+  height: 5rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  color: #333;
+  font-size: 14px;
+  cursor: pointer;
+  margin: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.favBtn:hover {
+  background: linear-gradient(to bottom, #f0f0f0, #e8e8e8);
+  border-color: #bbb;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.favBtn:active {
+  background: linear-gradient(to bottom, #e0e0e0, #d8d8d8);
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.favorites-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #eee;
+}

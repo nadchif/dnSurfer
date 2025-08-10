@@ -1,0 +1,17 @@
+{
+  "name": "dnsurfer-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "start:redis": "docker run --rm --name temp-redis -d -p 6379:6379 redis:8.2-alpine"
+  },
+  "dependencies": {
+    "dns2": "^2.1.0",
+    "html-to-text": "^9.0.5",
+    "redis": "^5.8.0",
+    "sanitize-html": "^2.17.0",
+    "turndown": "^7.2.0"
+  }
+}

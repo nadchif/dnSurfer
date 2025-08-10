@@ -1,0 +1,49 @@
+{
+  "name": "dnsurfer-desktop",
+  "version": "1.0.0",
+  "main": "main.js",
+  "build": {
+    "appId": "com.nadchif.dnSurfer",
+    "productName": "dnSurfer",
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "artifactName": "${productName}-${arch}-mac.${ext}",
+      "identity": null
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "artifactName": "${productName}-${arch}-linux.${ext}"
+    }
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dist:linux": "electron-builder --linux AppImage  --x64 --arm64",
+    "dist:mac": "electron-builder --mac --x64 --arm64",
+    "dist:win": "electron-builder --win portable  --x64 --arm64"
+  },
+  "author": "nadchif <nadchif@gmail.com> (https://danielchif.dev/)",
+  "license": "Apache-2.0",
+  "description": "A cross-platform web browser over DNS",
+  "homepage": "https://github.com/nadchif/dnSurfer",
+  "devDependencies": {
+    "cross-env": "^10.0.0",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "dns-packet": "^5.6.1",
+    "electron-prompt": "^1.7.0",
+    "marked": "^16.1.2"
+  }
+}

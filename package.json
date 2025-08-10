@@ -1,0 +1,7 @@
+{
+  "name": "dnsurfer-server-suite",
+  "version": "1.0.0",
+    "scripts": {
+        "browser": "cd desktop-client && npm install && npm start && cd .."
+    }
+}
