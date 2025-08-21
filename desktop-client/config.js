@@ -1,6 +1,176 @@
-export const DNS_SERVER_HOST = process.env.APP_DNS_SERVER || '127.0.0.1';
-console.log('[CONFIG] Using DNS server host:', DNS_SERVER_HOST);
-
 export const MAX_FETCH_ATTEMPTS = 3;
 export const RETRY_BASE_DELAY_MS = 120;
 export const DNS_TIMEOUT_MS = 8000;
+
+/**
+ * Allowed HTML tags that will survive sanitation before compact conversion.
+ * Mirror the client TAGS list for parity.
+ */
+export const TAGS = [
+  // Document structure
+  'html',
+  'head',
+  'body',
+  'title',
+  'meta',
+  'link',
+  'style',
+
+  // Sections
+  'header',
+  'footer',
+  'main',
+  'section',
+  'article',
+  'aside',
+  'nav',
+
+  // Text content
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'p',
+  'hr',
+  'pre',
+  'blockquote',
+
+  // Inline text semantics
+  'span',
+  'a',
+  'abbr',
+  'b',
+  'i',
+  'u',
+  'strong',
+  'em',
+  'small',
+  'mark',
+  'del',
+  'ins',
+  'sub',
+  'sup',
+  'code',
+  'kbd',
+  'samp',
+  'var',
+  'cite',
+  'q',
+  'time',
+  'dfn',
+  'bdi',
+  'bdo',
+  's',
+  'strike',
+
+  // Lists
+  'ul',
+  'ol',
+  'li',
+  'dl',
+  'dt',
+  'dd',
+
+  // Tables
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'td',
+  'th',
+  'caption',
+  'colgroup',
+  'col',
+
+  // Forms
+  'form',
+  'label',
+  'input',
+  'textarea',
+  'button',
+  'select',
+  'option',
+  'optgroup',
+  'fieldset',
+  'legend',
+  'datalist',
+  'output',
+  'progress',
+  'meter',
+
+  // Media (safe subset)
+  'img',
+  'picture',
+  'source',
+  'svg',
+  'path',
+  'circle',
+  'rect',
+  'line',
+  'polyline',
+  'polygon',
+  'g',
+  'text',
+
+  // Other useful containers
+  'div',
+  'figure',
+  'figcaption',
+  'details',
+  'summary',
+  'dialog',
+  'canvas',
+
+  // Presentational tags sometimes used on legacy pages
+  'center',
+  'font',
+];
+
+export const ATTRS = [
+  'href',
+  'src',
+  'alt',
+  'title',
+  'class',
+  'id',
+  'style',
+  'width',
+  'height',
+  'rel',
+  'type',
+  'color',
+  'bgcolor',
+  'name',
+  'cellpadding',
+  'cellspacing',
+  'colspan',
+  'rowspan',
+  'align',
+  'valign',
+  'border',
+  'disabled',
+  'readonly',
+  'value',
+  'placeholder',
+  'autofocus',
+  'required',
+  'step',
+  'checked',
+  'selected',
+  'multiple',
+  'link',
+  'text',
+  'vlink',
+
+  // Additional attributes used by SVGs
+  'fill',
+  'stroke',
+  'viewBox',
+  'xmlns',
+  'version',
+  'xlink:href',
+  'd',
+];

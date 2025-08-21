@@ -6,7 +6,8 @@ const dns = require('dns');
 const { Buffer } = require('buffer');
 const dnsPacket = require('dns-packet');
 const prompt = require('electron-prompt');
-const { DNS_SERVER_HOST, DNS_TIMEOUT_MS, MAX_FETCH_ATTEMPTS, RETRY_BASE_DELAY_MS } = require('./config');
+const jsonCodec = require('json-url')('lzma');
+const { DNS_TIMEOUT_MS, MAX_FETCH_ATTEMPTS, RETRY_BASE_DELAY_MS } = require('./config');
 
 let cachedDnsServer;
 let runtimeDnsServer;
@@ -42,11 +43,6 @@ function saveDnsServer(dnsServer) {
   } catch (err) {
     console.warn('[CONFIG] Failed to save DNS server:', err.message);
   }
-}
-
-// Check for required APP_DNS_SERVER environment variable
-if (!process.env.APP_DNS_SERVER) {
-  console.warn('[CONFIG] APP_DNS_SERVER environment variable not set, will prompt user');
 }
 
 async function promptForDnsServer() {
@@ -96,11 +92,37 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // devTools: false
+      devTools: false
     }
   });
 
   win.setMenuBarVisibility(false);
+  
+  // Prevent navigation to external URLs
+  try {
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.webContents.on('will-navigate', (e, url) => {
+      console.log('[NAV] Blocked will-navigate to', url);
+      e.preventDefault();
+    });
+  } catch (e) {
+    console.warn('[NAV] Failed to attach navigation guards', e.message);
+  }
+
+  // But intercept navigation requests to load them over DNS
+  try {
+    const ses = win.webContents.session;
+    ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+      const u = details.url || '';
+      if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') {
+        win.webContents.send('loadOverDns', { url: u });
+        return callback({ cancel: true });
+      }
+      return callback({ cancel: false });
+    });
+  } catch (e) {
+    console.warn('[NET] Failed to attach webRequest blocker', e.message);
+  }
   
   win.loadFile('index.html');
 }
@@ -228,7 +250,7 @@ ipcMain.handle('fetchPage', async (event, { url, page }) => {
   }
   
   console.error('[IPC] fetchPage failed after', MAX_FETCH_ATTEMPTS, 'attempts:', lastError);
-  return `Error: ${lastError.message}`;
+  return await jsonCodec.compress({dom: [`⚠️ Error: ${lastError.message}`], styles: ''});
 });
 
 ipcMain.handle('openExternal', async (event, url) => {

@@ -1,3 +1,5 @@
+import JsonUrl from 'json-url';
+
 /**
  * Split a string into fixed-size chunks.
  * Useful when you need to send or encode data with length limits (e.g. DNS labels, SMS segments).
@@ -7,43 +9,50 @@
  */
 export function chunkText(text, size = 240) {
   const chunks = [];
-  for (let i = 0; i < text.length; i += size) chunks.push(text.slice(i, i + size));
+  for (let i = 0; i < text.length; i += size)
+    chunks.push(text.slice(i, i + size));
   return chunks;
 }
 
 /**
- * Normalize a string to plain ASCII-friendly text.
- * Replaces common Unicode punctuation with ASCII equivalents, expands some symbols,
- * collapses non‑breaking spaces to regular spaces, converts ellipsis to '...', and
- * strips remaining non-printable / non-ASCII characters (except tab, CR, LF, space–~).
- * @param {string} s - Input string possibly containing typographic Unicode characters.
- * @returns {string} Normalized ASCII-range string.
+ * Compress a JSON object using LZMA compression and encode it as a URL-safe string.
+ * Uses json-url library for compression.
+ * @param {Object} obj - The JSON object to compress.
+ * @returns {Promise<string>} The compressed and encoded string.
  */
-export function normalizeAscii(s) {
-  return s
-    .replace(/[“”«»„‟]/g, '"')
-    .replace(/[‘’‚‛]/g, "'")
-    .replace(/[–—]/g, '-')
-    .replace(/…/g, '...')
-    .replace(/[·•]/g, '*')
-    .replace(/[°]/g, ' deg ')
-    .replace(/©/g, '(c)')
-    .replace(/®/g, '(R)')
-    .replace(/™/g, 'TM')
-    .replace(/[\u00A0\u202F]/g, ' ')
-    .replace(/↵/g, ' ')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ''); // allow tabs/newlines plus printable ASCII
-}
+const jsonCodec = JsonUrl('lzma');
+export const compressJson = async (obj) => {
+  const encoded = await jsonCodec.compress(obj);
+  return encoded;
+};
 
-/** * Follow a URL redirect, resolving relative paths against a base URL.
- * @param {string} base - The base URL to resolve against.
- * @param {string} loc - The location to resolve (can be absolute or relative).
- * @returns {string} Resolved absolute URL.
+
+/**
+ * Parse cache headers from a Response object to determine how long to cache the response.
+ * Fallback to a default value if no cache headers are present.
+ * @param {Response} res - The Response object to parse.
+ * @param {number} fallbackSeconds - Default cache duration in seconds if no headers are found.
+ * @returns {number} The determined cache duration in seconds.
  */
-export function followRedirect(base, loc) {
+export const parseCacheHeaders = (res, fallbackSeconds)  =>{
+  let ttlSec = fallbackSeconds;
   try {
-    return new URL(loc, base).toString();
-  } catch {
-    return loc;
-  }
+    const cacheControl = res.headers.get('cache-control') || '';
+    const cc = cacheControl.toLowerCase();
+    const noStore = /no-store|private/i.test(cc);
+    if (noStore) return 0; // don't cache
+    const m = cc.match(/max-age=(\d+)/);
+    if (m) ttlSec = parseInt(m[1], 10);
+    else {
+      const expires = res.headers.get('expires');
+      if (expires) {
+        const exp = Date.parse(expires);
+        if (!isNaN(exp)) {
+          const diff = Math.floor((exp - Date.now()) / 1000);
+          if (diff > 0) ttlSec = diff;
+        }
+      }
+    }
+  } catch {}
+  return ttlSec;
 }

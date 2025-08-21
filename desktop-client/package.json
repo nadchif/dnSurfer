@@ -42,8 +42,10 @@
     "electron-builder": "^26.0.12"
   },
   "dependencies": {
+    "@babel/runtime": "^7.28.3",
     "dns-packet": "^5.6.1",
     "electron-prompt": "^1.7.0",
+    "json-url": "^3.1.0",
     "marked": "^16.1.2"
   }
 }

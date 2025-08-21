@@ -88,10 +88,10 @@ body {
 #output {
   flex: 1;
   background: white;
-  overflow: auto;
+  overflow: hidden;
   border: none;
   position: relative;
-  padding: 1rem;
+  width: '100vw';
 }
 
 #output hr {
@@ -169,3 +169,13 @@ a {
   border-radius: 8px;
   border: 1px solid #eee;
 }
+
+.loader::after {
+content:"...";
+display:inline-block;
+height: 1em;
+width:0ch;
+overflow:hidden;
+animation:dotty 1.2s steps(4,end) infinite;
+}
+@keyframes dotty {from{width:0ch;}to{width:3ch;}}

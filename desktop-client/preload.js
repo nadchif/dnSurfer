@@ -3,7 +3,8 @@ const { marked } = require('marked');
 
 contextBridge.exposeInMainWorld('dnsApi', {
   fetchPage: (url, page) => ipcRenderer.invoke('fetchPage', { url, page }),
-  openExternal: (url) => ipcRenderer.invoke('openExternal', url)
+  openExternal: (url) => ipcRenderer.invoke('openExternal', url),
+  onLoadOverDns: (callback) => ipcRenderer.on('loadOverDns', callback)
 });
 
 contextBridge.exposeInMainWorld('marked', {

@@ -2,10 +2,15 @@ import dns2 from 'dns2';
 const { UDPServer, Packet } = dns2;
 import sanitizeHtml from 'sanitize-html';
 import { createHash } from 'crypto';
-import { createClient } from 'redis';
-import { ALLOWED_MD_TAGS, CACHE_TTL, PAGE_PARTS_LIMIT, FETCH_TIMEOUT_MS } from './config.js';
-import { turndown } from './turndown.js';
-import { chunkText, normalizeAscii } from './util.js';
+import {
+  CACHE_TTL,
+  PAGE_PARTS_LIMIT,
+  FETCH_TIMEOUT_MS,
+  SANITIZE_HTML_OPTIONS,
+} from './config.js';
+import { chunkText, compressJson } from './util.js';
+import { redis } from './cache.js';
+import { compactHtml } from './compact.js';
 
 const PORT = process.env.PORT || 53;
 
@@ -17,33 +22,28 @@ function fetchPage(url) {
     redirect: 'follow',
     signal: controller.signal,
     headers: {
-      'User-Agent': process.env.FETCH_UA || 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
-    }
-  }).then(res => {
-    if (!res.ok) throw new Error('HTTP error ' + res.status);
-    return res.text();
-  }).finally(() => clearTimeout(t));
+      'User-Agent':
+        process.env.FETCH_UA ||
+        'Mozilla/5.0 (Linux; Android 14; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    },
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error('HTTP error ' + res.status);
+      return res.text();
+    })
+    .finally(() => clearTimeout(t));
 }
 
-function renderText(html) {
-  const safeHtml = sanitizeHtml(html, {
-    allowedTags: ALLOWED_MD_TAGS.concat(['head', 'title']),
-    allowedAttributes: { a: ['href'] },
-    transformTags:{
-      'head': () => ({ tagName: 'head', text: '' }),
-      'title': () => ({ tagName: 'title', text: '' })
-    }
-  });
-  return turndown.turndown(safeHtml).trim();
+async function renderPage(html, baseUrl) {
+  const safeHtml = sanitizeHtml(html, SANITIZE_HTML_OPTIONS);
+  const compact = await compactHtml(safeHtml, baseUrl);
+  const compressed = await compressJson(compact);
+  return compressed;
 }
-
-const redis = createClient({ url: process.env.REDIS_URL || 'redis://127.0.0.1:6379' });
-redis.on('error', err => console.error('[redis] error', err.message));
-redis.on('connect', () => console.log('[redis] connected'));
-redis.connect().catch(err => console.error('[redis] connect failed', err.message));
 
 async function getPageChunks(url) {
-  const key = 'dnsurfer:' + ':chunks:' + createHash('sha1').update(url).digest('hex');
+  const key =
+    'dnsurfer:' + ':chunks:' + createHash('sha1').update(url).digest('hex');
   try {
     const cached = await redis.get(key);
     if (cached) {
@@ -56,10 +56,8 @@ async function getPageChunks(url) {
   }
 
   const html = await fetchPage(url);
-  let textRaw = renderText(html).replace(/\r?\n+/g, '<r>');
-
-  const text = normalizeAscii(textRaw);
-  const chunks = chunkText(text);
+  const textRaw = await renderPage(html, url);
+  const chunks = chunkText(textRaw);
 
   try {
     await redis.set(key, JSON.stringify(chunks), { EX: CACHE_TTL });
@@ -76,7 +74,11 @@ server.on('request', async (req, send, rinfo) => {
   try {
     const [question] = req.questions || [];
     const name = question ? question.name : '<no-name>';
-    console.log(`[dns][query] ${new Date().toISOString()} from ${rinfo?.address || '0.0.0.0'}:${rinfo?.port || 0} name=${name}`);
+    console.log(
+      `[dns][query] ${new Date().toISOString()} from ${
+        rinfo?.address || '0.0.0.0'
+      }:${rinfo?.port || 0} name=${name}`
+    );
 
     const labels = name.split('.');
     if (labels.length < 4) {
@@ -107,20 +109,32 @@ server.on('request', async (req, send, rinfo) => {
       const total = chunks.length;
       if (total > PAGE_PARTS_LIMIT) {
         console.warn(`[dns][limit] too many parts total=${total}`);
-        chunk = '<|1/1|> Page too large';
+        chunk = `<|1/1|> ${await compressJson({
+          dom: ['Page too large'],
+          styles: '',
+        })} `;
       } else if (pageNum < total) {
         const raw = chunks[pageNum];
         const prefix = `<|${pageNum + 1}/${total}|> `;
-        const MAX_TXT_LEN = 255; // single TXT character-string limit
-        const avail = MAX_TXT_LEN - prefix.length;
-        chunk = prefix + raw.slice(0, avail);
+        const avail = 255 - prefix.length; // single TXT character-string limit is 255
+        chunk = prefix + raw.slice(raw, avail);
       } else {
-        console.log({chunks})
         const prefix = `<|${total}/${total}|> `;
-        chunk = prefix + '<EOF>';
+        chunk = prefix + ' ';
       }
     } catch (err) {
-      chunk = `<|1/1|> Error: ${err.message}`;
+      const msg = err && err.message ? err.message : String(err);
+      if (/abort/i.test(msg) || /timeout/i.test(msg)) {
+        console.error('[dns][drop] resource timeout, dropping request');
+        chunk = `<|1/1|> ${await compressJson({
+          dom: ['Timeout loading page'],
+          styles: '',
+        })}`;
+      }
+      chunk = `<|1/1|> ${await compressJson({
+        dom: ['Error loading page'],
+        styles: '',
+      })}`;
       console.error('[dns][error] build response', err);
     }
 
@@ -130,14 +144,20 @@ server.on('request', async (req, send, rinfo) => {
       type: Packet.TYPE.TXT,
       class: Packet.CLASS.IN,
       ttl: 30,
-      data: chunk
+      data: chunk,
     });
 
     send(response);
-    console.log(`[dns][resp] name=${name} bytes=${chunk.length} ms=${Date.now() - started}`);
+    console.log(
+      `[dns][resp] name=${name} bytes=${chunk.length} ms=${
+        Date.now() - started
+      }`
+    );
   } catch (outerErr) {
     console.error('[dns][fatal]', outerErr);
-    try { send(Packet.createResponseFromRequest(req)); } catch {}
+    try {
+      send(Packet.createResponseFromRequest(req));
+    } catch {}
   }
 });
 

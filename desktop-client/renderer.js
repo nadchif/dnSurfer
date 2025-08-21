@@ -1,7 +1,43 @@
 import { pageCache } from './cache.js';
+import { ATTRS, TAGS } from './config.js';
 import { browsingHistory } from './history.js';
+import './json-url.js';
+const jsonCodec = window.JsonUrl('lzma');
 
 export const MAX_PARALLEL_DNS_REQUESTS = 3;
+
+const PLACEHOLDER_IMG = `<svg xmlns='http://www.w3.org/2000/svg' width='2' height='1'><rect width='2' height='1' fill='#808080'/></svg>`;
+const PLACEHOLDER_IMG_DATA_URL =
+  'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(PLACEHOLDER_IMG);
+
+const getPlaceholderImg = (alt) => {
+  if (!alt || !alt.trim()) {
+    return PLACEHOLDER_IMG_DATA_URL;
+  }
+  return (
+    'data:image/svg+xml;charset=UTF-8,' +
+    encodeURIComponent(`
+      <svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'>
+        <rect width='100%' height='100%' fill='#888'/>
+        <text 
+          x='2%' 
+          y='50%' 
+          font-size='16' 
+          text-anchor='start' 
+          dominant-baseline='middle' 
+          fill='#fff'
+        >
+          ${alt}
+        </text>
+      </svg>
+    `)
+  );
+};
+
+const renderLoadingPage = (percent) =>
+  `<div style="padding:1rem; position:">${
+    percent ? '(' + percent + '%) ' : ' '
+  }Loading<span class="loader"></span></div>`;
 
 function getSearchUrl(queryText) {
   return `https://duckduckgo.com/html/?q=${encodeURIComponent(queryText)}`;
@@ -103,6 +139,18 @@ function attachFavoriteHandlers() {
 
 document.addEventListener('DOMContentLoaded', () => {
   renderHome();
+
+  // Listen for navigation requests intercepted by main process
+  if (window.dnsApi && window.dnsApi.onLoadOverDns) {
+    window.dnsApi.onLoadOverDns((event, data) => {
+      if (data && data.url) {
+        console.log('[UI] Received loadOverDns request for:', data.url);
+        setCurrentUrl(data.url, true);
+        currentPage = 0;
+        loadPage();
+      }
+    });
+  }
 });
 
 if (homeBtn) {
@@ -121,10 +169,11 @@ if (githubBtn) {
 }
 
 function renderHome() {
-  output.innerHTML = `<div>
+  output.innerHTML = `<div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
     <h2>Favorites</h2>
     <div class="favorites-container">
       <button class="favBtn" style="background:#b31b1b;color:#fff" data-url="https://arxiv.org/" title="arXiv - Academic Papers">arxiv.org</button>
+      <button class="favBtn" style="background:#fafafa;color:#000" data-url="https://bearblog.dev/discover/" title="YouTube - Video Platform">ʕ•ᴥ•ʔ Bear</button>
       <button class="favBtn" style="background:#000;color:#fff" data-url="https://dev.to" title="Dev.to - Developer Community">DEV</button>
       <button class="favBtn" style="background:#ff6600;color:#fff" data-url="https://news.ycombinator.com" title="Hacker News">Hacker News</button>
     </div>
@@ -160,23 +209,25 @@ async function loadPage() {
 
   resetUrlInputStyling();
 
-  output.innerHTML = `<pre>Loading...</pre>`;
+  output.innerHTML = renderLoadingPage(0);
 
   try {
     const firstTxt = await window.dnsApi.fetchPage(currentUrl, currentPage);
     const parsed = parseFragment(firstTxt);
-    const firstIndex = parsed.index; // 1-based index of this fragment
+    const firstIndex = parsed.index;
     const total = parsed.total;
     const firstText = parsed.text;
 
     if (total <= 1) {
-      // Single fragment - cache and render immediately
-      pageCache.set(currentUrl, firstText);
+      if (firstText.trim().length > 200) {
+        // Single fragment - cache and render immediately
+        pageCache.set(currentUrl, firstText);
+      }
       renderAndAttach(firstText);
       return;
     }
 
-    output.innerHTML = `<pre>(${Math.round(100 / total)}%) Loading...</pre>`;
+    output.innerHTML = renderLoadingPage(Math.floor(100 / total));
     const requiredIndices = [];
     for (let j = 1; j <= total; j++)
       if (j !== firstIndex) requiredIndices.push(j);
@@ -187,7 +238,7 @@ async function loadPage() {
 
     function updateProgress() {
       const progressPercent = Math.round((completedChunks / total) * 100);
-      output.innerHTML = `<pre>(${progressPercent}%) Loading...</pre>`;
+      output.innerHTML = renderLoadingPage(progressPercent);
     }
     updateProgress();
 
@@ -211,10 +262,6 @@ async function loadPage() {
       return window.dnsApi.fetchPage(currentUrl, pageNum);
     }
 
-    function sleep(ms) {
-      return new Promise((r) => setTimeout(r, ms));
-    }
-
     async function fetchFragmentIndex(j) {
       const pageNum = j - 1;
       try {
@@ -227,7 +274,6 @@ async function loadPage() {
             j,
             p.total
           );
-          fragments[j] = `\n[Missing fragment ${j}: index mismatch]\n`;
         } else {
           fragments[j] = p.text;
           received.add(j);
@@ -235,7 +281,6 @@ async function loadPage() {
       } catch (err) {
         const msg = err && err.message ? err.message : String(err);
         console.warn('[UI] fragment', j, 'failed:', msg);
-        fragments[j] = `\n[Missing fragment ${j}: ${msg}]\n`;
       }
       completedChunks++;
       updateProgress();
@@ -251,7 +296,6 @@ async function loadPage() {
     for (let j = 1; j <= total; j++) {
       if (!fragments[j]) {
         console.warn('[UI] Filling missing fragment', j);
-        fragments[j] = `\n[Missing fragment ${j} (no data)]\n`;
       }
     }
 
@@ -281,65 +325,258 @@ function parseFragment(txt) {
   return { index, total, text };
 }
 
-function renderAndAttach(mdText) { 
-  mdText = mdText.replace(/<r\s*>/gi, '\r\n\r\n');
-  mdText = mdText.replace(/<m\s*>/gi, '[IMG]');
-  mdText = sanitizeMarkdownLinkUrls(mdText);
-  output.innerHTML = (window.marked?.parse ? window.marked.parse(mdText) : mdText);
-  attachLinkHandlers();
+function compactToHtml(node) {
+  if (Array.isArray(node) && typeof node[0] !== 'number') {
+    return node.map(compactToHtml).join('');
+  }
+  if (typeof node === 'string') return node;
+
+  const [tagIndex, attrs, children = []] = node;
+  const tag = TAGS[tagIndex];
+
+  const attrString = attrs.map(([k, v]) => ` ${ATTRS[k]}="${v}"`).join('');
+
+  const childHtml = children.map(compactToHtml).join('');
+  return ` <${tag}${attrString}>${childHtml}</${tag}> `;
 }
 
-// Remove stray newlines / whitespace inside link destinations: [text](https://exa\n mple.com)
-// and autolinks: <https://exa\n mple.com>
-function sanitizeMarkdownLinkUrls(src) {
-  src = src.replace(/\[\s*\]\s*\([^)]*\)/g, '');
-  src = src.replace(/\[([^\]]+)\]\s*\(([^)]+)\)/g, (full, text, url) => {
-    const cleanedUrl = url.replace(/\s+/g, ''); // remove all whitespace from URL
-    const cleanedText = text.replace(/\s+/g, ' ').trim(); // collapse internal whitespace/newlines
-    return `[${cleanedText}](${cleanedUrl})`;
-  });
-  // Autolinks
-  src = src.replace(
-    /<(https?:[^>]+)>/g,
-    (full, url) => `<${url.replace(/\s+/g, '')}>`
-  );
-  return src;
-}
+async function renderAndAttach(payloadText) {
+  output.innerHTML = '';
 
-function attachLinkHandlers() {
-  const links = output.querySelectorAll('a');
-  links.forEach((link) => {
-    const href = link.getAttribute('href') || '';
-    if (href.startsWith('http://') || href.startsWith('https://')) {
-      // external link: navigate within the app
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        setCurrentUrl(href);
-        currentPage = 0;
-        loadPage();
-      });
-    } else if (href.startsWith('#')) {
-      // fragment link: scroll to element id if exists
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const id = href.slice(1);
-        const el = document.getElementById(id);
-        if (el) el.scrollIntoView();
-      });
-    } else {
-      // relative link or other scheme: treat as path relative to currentUrl
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const base = currentUrl || '';
-        try {
-          const real = new URL(href, base).toString();
-          setCurrentUrl(real);
-          currentPage = 0;
-          loadPage();
-        } catch {
-          console.warn('Could not resolve link href:', href);
+  const payload = await jsonCodec.decompress(payloadText);
+  console.log('[UI] Render payload:', payload);
+  const imgMap = payload.imgs || {};
+
+  // Render the DOM string once
+  const html = compactToHtml(payload.dom);
+  const baseHref = currentUrl || '';
+  const safeStyles =
+    payload.styles && payload.styles?.trim()
+      ? payload.styles.replace(/@import[^;]+;/gi, '')
+      : '';
+  const stylesForIframe = safeStyles
+    ? safeStyles.replace(/url\s*\(([^)]+)\)/gi, (m, p1) => {
+        const val = String(p1 || '')
+          .trim()
+          .replace(/^['"]|['"]$/g, '');
+        if (val.startsWith('data:')) return m;
+        return `url(${PLACEHOLDER_IMG_DATA_URL})`;
+      })
+    : '';
+  let htmlForIframe = html;
+
+  htmlForIframe = htmlForIframe
+    .replace(/style\s*=\s*"([^"]*)"/gi, (full, content) => {
+      const ns = content.replace(
+        /url\s*\(([^)]+)\)/gi,
+        `url(${PLACEHOLDER_IMG_DATA_URL})`
+      );
+      return `style="${ns}"`;
+    })
+    .replace(/style\s*=\s*'([^']*)'/gi, (full, content) => {
+      const ns = content.replace(
+        /url\s*\(([^)]+)\)/gi,
+        `url(${PLACEHOLDER_IMG_DATA_URL})`
+      );
+      return `style='${ns}'`;
+    });
+
+  function sanitizeIframeContent(htmlInput) {
+    const container = document.createElement('div');
+    container.innerHTML = htmlInput;
+    try {
+      container.querySelectorAll('script').forEach((s) => s.remove());
+    } catch {}
+    try {
+      container
+        .querySelectorAll(
+          'link[rel="stylesheet"], link[rel~="icon"], link[rel="preload"], link[rel="prefetch"], link[rel="preconnect"], link[rel="dns-prefetch"]'
+        )
+        .forEach((l) => l.remove());
+    } catch {}
+    try {
+      container.querySelectorAll('*').forEach((el) => {
+        for (let i = el.attributes.length - 1; i >= 0; i--) {
+          const a = el.attributes[i];
+          if (/^on/i.test(a.name)) el.removeAttribute(a.name);
         }
       });
-    }
-  });
+    } catch {}
+    try {
+      const getImgSrc = (src, alt = '') => {
+        console.log('[UI] getImgSrc called for:', src, imgMap);
+        if (!src || !imgMap || typeof imgMap !== 'object')
+          return PLACEHOLDER_IMG_DATA_URL;
+        const imgContent = imgMap[src];
+        if (!imgContent) {
+          return getPlaceholderImg(alt);
+        }
+        return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+          imgContent
+        )}`;
+      };
+      container.querySelectorAll('img').forEach((img) => {
+        const currentSrc = img.getAttribute('src');
+        if (img.hasAttribute('src') && !/^data:/i.test(currentSrc)) {
+          img.setAttribute('src', getImgSrc(currentSrc, img.alt));
+        }
+        img.removeAttribute('srcset');
+        img.removeAttribute('data-src');
+      });
+    } catch {}
+    try {
+      container.querySelectorAll('[style]').forEach((el) => {
+        const s = el.getAttribute('style');
+        if (!s) return;
+        const ns = s.replace(
+          /url\s*\(([^)]+)\)/gi,
+          `url(${PLACEHOLDER_IMG_DATA_URL})`
+        );
+        el.setAttribute('style', ns);
+      });
+    } catch {}
+    try {
+      container.querySelectorAll('style').forEach((st) => {
+        st.textContent = (st.textContent || '').replace(/@import[^;]+;/gi, '');
+      });
+    } catch {}
+    try {
+      const mappings = [
+        ['bgcolor', 'backgroundColor'],
+        ['color', 'color'],
+        ['width', 'width', (v) => (/^\d+$/.test(v) ? v + 'px' : v)],
+        ['height', 'height', (v) => (/^\d+$/.test(v) ? v + 'px' : v)],
+        ['align', 'textAlign'],
+        ['valign', 'verticalAlign'],
+        ['border', 'borderWidth', (v) => (/^\d+$/.test(v) ? v + 'px' : v)],
+        ['cellpadding', 'padding', (v) => (/^\d+$/.test(v) ? v + 'px' : v)],
+      ];
+      mappings.forEach(([attr, prop, transform]) => {
+        container.querySelectorAll('[' + attr + ']').forEach((el) => {
+          const raw = el.getAttribute(attr);
+          if (!raw) return;
+          const val = transform ? transform(raw) : raw;
+          try {
+            el.style[prop] = val;
+          } catch {}
+        });
+      });
+    } catch {}
+    try {
+      container.querySelectorAll('button').forEach((button) => {
+        button.disabled = true;
+        button.style.cursor = 'not-allowed';
+        button.style.pointerEvents = 'none';
+      });
+    } catch {}
+    return container.innerHTML;
+  }
+
+  const sanitizedHtml = sanitizeIframeContent(htmlForIframe);
+
+  let finalHtml = sanitizedHtml;
+
+  const csp = [
+    "default-src 'none'",
+    "script-src 'none'",
+    "style-src 'unsafe-inline'",
+    'img-src data:',
+    "connect-src 'none'",
+    "font-src 'none'",
+    "media-src 'none'",
+    "frame-src 'none'",
+    "child-src 'none'",
+    "manifest-src 'none'",
+    "worker-src 'none'",
+    "object-src 'none'",
+    "form-action 'none'",
+    "prefetch-src 'none'",
+    "navigate-to 'none'",
+  ].join('; ');
+
+  const iframeDoc = `<!doctype html><html${attrsFromMap(
+    payload.htmlAttrs
+  )}><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><base href="${escapeHtmlAttr(
+    baseHref
+  )}"><style>
+  .__chrome_input {
+    display: inline-flex;
+    align-items: center; 
+    width: 20ch;
+    min-width: 0;
+    padding: 1px 2px;
+    border: 2px inset #eee;
+    background-color: white;
+    font: 400 13.3333px Arial;
+    color: initial;
+    text-align: left;
+    cursor: not-allowed;
+    height: 2em;              
+    line-height: 2em; 
+  }
+  .__chrome_button {
+    display: inline-flex;
+    align-items: center; 
+    padding: 1px 6px;
+    border: 2px outset buttonborder;
+    background-color: buttonface;
+    color: buttontext;
+    font: 400 13.3333px Arial; /* Chrome's default system font size */
+    height: 2em;              
+    line-height: 2em; 
+    text-align: center;
+    cursor: not-allowed;
+  }
+  ${stylesForIframe}
+  </style></head><body${attrsFromMap(
+    payload.bodyAttrs
+  )}>${finalHtml}</body></html>`;
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('sandbox', '');
+  iframe.setAttribute('referrerpolicy', 'no-referrer');
+  iframe.style.width = '100vw';
+  iframe.style.height = '100%';
+  iframe.style.border = '0';
+  iframe.srcdoc = iframeDoc;
+  output.appendChild(iframe);
+
+  try {
+    const styledEls = output.querySelectorAll('[style]');
+    styledEls.forEach((el) => {
+      const s = el.getAttribute('style');
+      if (s && /url\s*\(/i.test(s)) {
+        const newStyle = s.replace(
+          /url\s*\(([^)]+)\)/gi,
+          `url(${PLACEHOLDER_IMG_DATA_URL})`
+        );
+        el.setAttribute('style', newStyle);
+      }
+    });
+  } catch (err) {
+    console.warn('[UI] Failed to replace images with placeholders', err);
+  }
+}
+
+// Helpers used for iframe srcdoc assembly
+function escapeHtmlAttr(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function attrsFromMap(map) {
+  try {
+    if (!map || typeof map !== 'object') return '';
+    const parts = [];
+    Object.entries(map).forEach(([k, v]) => {
+      if (v == null || v === '') return;
+      parts.push(' ' + k + '="' + escapeHtmlAttr(String(v)) + '"');
+    });
+    return parts.join('');
+  } catch {
+    return '';
+  }
 }
