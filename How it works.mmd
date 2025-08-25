@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant Browser as Browser (Electron)
+    participant DNS as Custom DNS Server
+    participant Web as Original Web Source
+
+    Browser->>+DNS: 1. DNS Query for TXT record (page.content.dns)
+    DNS->>+Web: 2. Fetch Page (HTTP GET)
+    Web-->>-DNS: HTML Content
+    Note over DNS: 3. Convert HTML to Markdown
+    Note over DNS: 4. Package Markdown into TXT record
+    DNS-->>-Browser: 5. DNS Response (with TXT record)
+    Note over Browser: 6. Parse TXT record and render Markdown
