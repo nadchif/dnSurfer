@@ -1,12 +1,13 @@
 sequenceDiagram
-    participant Browser as Browser (Electron)
-    participant DNS as Custom DNS Server
-    participant Web as Original Web Source
+    participant Browser as 💻 Browser (Electron)
+    participant DNS as 🌎 Custom DNS Server (Node.js)
+    participant Web as 📄 Original Web Source
 
     Browser->>+DNS: 1. DNS Query for TXT record (page.content.dns)
     DNS->>+Web: 2. Fetch Page (HTTP GET)
     Web-->>-DNS: HTML Content
-    Note over DNS: 3. Convert HTML to Markdown
-    Note over DNS: 4. Package Markdown into TXT record
-    DNS-->>-Browser: 5. DNS Response (with TXT record)
-    Note over Browser: 6. Parse TXT record and render Markdown
+    Note over DNS: 3. Encode HTML using json-url
+    Note over DNS: 4. Package into TXT record
+    DNS-->>-Browser: 5. DNS Response (json-url body in TXT record)
+    Note over Browser: 6. Parse TXT record response    
+    Note over Browser: 7. Decode json-url & render HTML in iFrame
